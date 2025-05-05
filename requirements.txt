@@ -25,3 +25,4 @@ pytorch-lightning
 spandrel
 open3d
 pymeshlab
+xatlas

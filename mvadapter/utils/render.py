@@ -14,6 +14,9 @@ from torch import BoolTensor, FloatTensor
 
 from . import logging
 from .camera import Camera
+import xatlas
+import pdb
+
 
 logger = logging.get_logger(__name__)
 
@@ -132,6 +135,7 @@ def load_mesh(
     front_x_to_y: bool = False,
     device: Optional[str] = None,
     return_transform: bool = False,
+    uv_unwrap: bool = False,
 ) -> TexturedMesh:
     scene = trimesh.load(mesh_path, force="mesh", process=False)
     if isinstance(scene, trimesh.Trimesh):
@@ -189,6 +193,8 @@ def load_mesh(
 
     if hasattr(mesh, "visual") and hasattr(mesh.visual, "uv"):
         v_tex = torch.tensor(mesh.visual.uv, dtype=torch.float32)
+        print(f"loaded mesh has visual, v_tex: {v_tex.shape}")
+        # pdb.set_trace()
         if flip_uv:
             v_tex[:, 1] = 1.0 - v_tex[:, 1]
         t_tex_idx = t_pos_idx.clone()
@@ -205,10 +211,33 @@ def load_mesh(
                 (default_uv_size, default_uv_size, 3), dtype=torch.float32
             )
     else:
-        v_tex = None
-        t_tex_idx = None
-        texture = None
+        if uv_unwrap:
+            print(f"⚠️  No UVs found in {mesh_path}. Unwrap the mesh")
+            pdb.set_trace()
+            print("Using xatlas to perform UV unwrapping, may take a while ...")
+            # Unwrap the mesh to obtain UVs
+            
 
+            vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
+
+            v_pos = v_pos[vmapping]
+            t_pos_idx = torch.tensor(indices, dtype=torch.int64)
+            v_tex = torch.tensor(uvs, dtype=torch.float32)
+            t_tex_idx = t_pos_idx.clone()
+            print(f"check xatlas output: {vmapping.shape}, {indices.shape}, {uvs.shape}") #  (2834041,), (3318336, 3), (2834041, 2)
+            print(f"v_pos: {v_pos.shape}, t_pos_idx: {t_pos_idx.shape}, v_tex: {v_tex.shape}") #  (2834041, 3), (3318336, 3), (2834041, 2)
+            pdb.set_trace()
+
+            # create empty texture
+            texture = torch.zeros(
+                (default_uv_size, default_uv_size, 3), dtype=torch.float32
+            )
+        else:
+            v_tex = None
+            t_tex_idx = None
+            texture = None
+
+ 
     textured_mesh = TexturedMesh(
         v_pos=v_pos,
         t_pos_idx=t_pos_idx,
@@ -239,6 +268,7 @@ class RenderOutput:
     depth: Optional[torch.FloatTensor] = None
     normal: Optional[torch.FloatTensor] = None
     pos: Optional[torch.FloatTensor] = None
+    uv: Optional[torch.FloatTensor] = None
 
 
 class NVDiffRastContextWrapper:
@@ -446,6 +476,7 @@ def render(
     height: int,
     width: int,
     render_attr: bool = True,
+    render_uv: bool = False,  # <---- new flag
     render_depth: bool = True,
     render_normal: bool = True,
     depth_normalization_strategy: DepthNormalizationStrategy = DepthControlNetNormalization(),
@@ -489,6 +520,12 @@ def render(
         if antialias_attr:
             gb_rgb = ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
         output_dict["attr"] = gb_rgb
+
+    if render_uv:
+        assert mesh.v_tex is not None, "mesh.v_tex must not be None to render UVs"
+        tex_c, _ = ctx.interpolate(mesh.v_tex[None], rast, mesh.t_tex_idx)
+        output_dict["uv"] = tex_c  # shape: [N, H, W, 2]
+
 
     if render_normal:
         gb_nrm, _ = ctx.interpolate(mesh.v_nrm[None], rast, mesh.stitched_t_pos_idx)

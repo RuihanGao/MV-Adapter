@@ -7,12 +7,74 @@ from PIL import Image
 from torchvision import transforms
 from tqdm import tqdm
 from transformers import AutoModelForImageSegmentation
+import cv2
+import trimesh
+
+import sys
+import os
+# add the parent directory to successfully import mvadapter as a module
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, parent_dir)
+import pdb
+import trimesh
 
 from mvadapter.models.attention_processor import DecoupledMVRowColSelfAttnProcessor2_0
 from mvadapter.pipelines.pipeline_mvadapter_i2mv_sdxl import MVAdapterI2MVSDXLPipeline
 from mvadapter.schedulers.scheduling_shift_snr import ShiftSNRScheduler
 from mvadapter.utils import get_orthogonal_camera, make_image_grid, tensor_to_image
 from mvadapter.utils.render import NVDiffRastContextWrapper, load_mesh, render
+
+
+def bake_uv_texture_from_views(images_tensor, uv_coords, masks, texres=1024, inpaint=True):
+    """
+    Args:
+        images_tensor: [N, H, W, 3], RGB images from N views
+        uv_coords:     [N, H, W, 2], UV coords per view, in [0, 1]
+        masks:         [N, H, W, 1], binary mask per view
+        texres:        texture resolution (square)
+        inpaint:       whether to apply OpenCV inpainting
+
+    Returns:
+        tex_img:       np.uint8 texture map of shape [texres, texres, 3]
+    """
+    device = images_tensor.device
+    N, H, W, _ = images_tensor.shape
+
+    # Initialize accumulators
+    tex_acc = torch.zeros((texres * texres, 3), dtype=torch.float32, device=device)
+    weight = torch.zeros((texres * texres, 1), dtype=torch.float32, device=device)
+
+
+    # Flatten inputs
+    uv = (uv_coords * (texres - 1)).long().view(-1, 2)
+    rgb = images_tensor.view(-1, 3)
+    mask_flat = masks.view(-1) > 0
+
+    # Only keep valid UVs
+    uv = uv[mask_flat]
+    rgb = rgb[mask_flat]
+
+    # Flatten 2D UV to 1D index
+    u, v = uv[:, 0], uv[:, 1]
+    idx = u + (texres - 1 - v) * texres  # Y-down image space
+    idx = idx.view(-1, 1).expand(-1, 3)
+
+
+
+    tex_acc = tex_acc.scatter_add(0, idx, rgb)
+    weight = weight.scatter_add(0, idx[:, :1], torch.ones_like(idx[:, :1], dtype=torch.float32))
+
+    tex_acc = tex_acc / (weight + 1e-6)
+    tex_img = tex_acc.view(texres, texres, 3).clamp(0, 1)
+
+    # Convert to CPU image
+    tex_img_np = (tex_img.cpu().numpy() * 255).astype(np.uint8)
+
+    if inpaint:
+        inpaint_mask = (weight.view(texres, texres).cpu().numpy() == 0).astype(np.uint8)
+        tex_img_np = cv2.inpaint(tex_img_np, inpaint_mask, 3, cv2.INPAINT_TELEA)
+
+    return tex_img_np
 
 
 def prepare_pipeline(
@@ -141,7 +203,10 @@ def run_pipeline(
     )
     ctx = NVDiffRastContextWrapper(device=device)
 
-    mesh = load_mesh(mesh_path, rescale=True, device=device)
+    mesh = load_mesh(mesh_path, rescale=True, device=device, uv_unwrap=True, default_uv_size=512, merge_vertices=False)
+    v_tex = mesh.v_tex
+    t_tex_idx = mesh.t_tex_idx
+
     render_out = render(
         ctx,
         mesh,
@@ -149,6 +214,9 @@ def run_pipeline(
         height=height,
         width=width,
         render_attr=False,
+        render_uv=True,     # ← get UVs instead
+        render_normal=True,
+        render_depth=False,
         normal_background=0.0,
     )
     pos_images = tensor_to_image((render_out.pos + 0.5).clamp(0, 1), batched=True)
@@ -195,7 +263,30 @@ def run_pipeline(
         **pipe_kwargs,
     ).images
 
-    return images, pos_images, normal_images, reference_image
+
+    # Save camera extrinsics and intrinsics (MVP components)
+    cam_dict = {
+        "w2c": cameras.w2c.cpu().numpy(),         # [N, 4, 4]
+        "proj_mtx": cameras.proj_mtx.cpu().numpy(),  # [N, 4, 4]
+        "c2w": cameras.c2w.cpu().numpy(),         # [N, 4, 4]
+    }
+
+    ### Map multi-view images to texture map ###
+    # Prepare accumulation buffers
+    # convert images to tensor
+    images_tensor = torch.stack([torch.tensor(np.array(image)).float() / 255.0 for image in images]).to(device) # [6, 768, 768, 3], range [0, 1]
+
+    tex_img = bake_uv_texture_from_views(
+        images_tensor=images_tensor,     # [6, 768, 768, 3]
+        uv_coords=render_out.uv,         # [6, 768, 768, 2]
+        masks=render_out.mask.unsqueeze(-1).float(),  # [6, 768, 768, 1]
+        texres=1024
+    )
+    uv_coords = render_out.uv.cpu().numpy()  # [6, 768, 768, 2]
+    images_tensor = images_tensor.cpu().numpy()  # [6, 768, 768, 3]
+    masks = render_out.mask.unsqueeze(-1).cpu().numpy()  # [6, 768, 768, 1]
+
+    return images, pos_images, normal_images, reference_image, cam_dict, tex_img, uv_coords, images_tensor, masks, v_tex, t_tex_idx
 
 
 if __name__ == "__main__":
@@ -231,7 +322,10 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="output.png")
     # Extra
     parser.add_argument("--remove_bg", action="store_true", help="Remove background")
+    parser.add_argument("--save_3D", action="store_true", help="save textured 3D mesh as output")
     args = parser.parse_args()
+    output_path = args.output.rsplit(".", 1)[0] 
+    tex_path = output_path + "_baked_texture.png"
 
     pipe = prepare_pipeline(
         base_model=args.base_model,
@@ -261,7 +355,7 @@ if __name__ == "__main__":
     else:
         remove_bg_fn = None
 
-    images, pos_images, normal_images, reference_image = run_pipeline(
+    images, pos_images, normal_images, reference_image, cam_dict, tex_img, uv_coords, images_tensor, masks, v_tex, t_tex_idx = run_pipeline(
         pipe,
         mesh_path=args.mesh,
         num_views=args.num_views,
@@ -278,9 +372,62 @@ if __name__ == "__main__":
         device=args.device,
         remove_bg_fn=remove_bg_fn,
     )
+    
     make_image_grid(images, rows=1).save(args.output)
-    make_image_grid(pos_images, rows=1).save(args.output.rsplit(".", 1)[0] + "_pos.png")
+    make_image_grid(pos_images, rows=1).save(output_path+ "_pos.png")
     make_image_grid(normal_images, rows=1).save(
-        args.output.rsplit(".", 1)[0] + "_nor.png"
+        output_path + "_nor.png"
     )
-    reference_image.save(args.output.rsplit(".", 1)[0] + "_reference.png")
+    reference_image.save(output_path + "_reference.png")
+    # save camera params
+    cam_dict_path = output_path + "_camera_params.npz"
+    np.savez(cam_dict_path, **cam_dict)
+    Image.fromarray(tex_img).save(tex_path)
+    print(f"Saved baked texture to {tex_path}")
+    np.savez(output_path + "_uv_coords.npz", uv_coords=uv_coords, images_tensor=images_tensor, masks=masks, v_tex=v_tex.cpu().numpy(), t_tex_idx=t_tex_idx.cpu().numpy())
+    pdb.set_trace()
+
+
+
+    # use multi-view images and camera params to bake texture to mesh
+    print(f"### Bake Multi-View Texture to Mesh ###")
+
+    # Assign to mesh and export
+    textured_mesh = load_mesh(args.mesh, rescale=True, device=args.device, uv_unwrap=False, merge_vertices=False)
+
+    # Get numpy arrays
+    verts = textured_mesh.v_pos.cpu().numpy()        # [V, 3]
+    uvs = v_tex          # [V, 2]
+    
+    texture = Image.open(tex_path).convert("RGB")
+    texture = np.array(texture) / 255.0  # [1024, 1024, 3], range [0,1]
+
+    H, W, _ = texture.shape
+
+    # Clip UVs to [0,1]
+    uvs = np.clip(uvs, 0, 1)
+
+    # Convert UVs to pixel coords
+    u_px = (uvs[:, 0] * (W - 1)).astype(np.int32)
+    v_px = ((1 - uvs[:, 1]) * (H - 1)).astype(np.int32)  # flip Y for image space
+
+    # Sample texture
+    colors = texture[v_px, u_px]  # [V, 3], in [0,1]
+
+    # Clamp and convert to float
+    colors = np.clip(colors, 0, 1)
+
+    faces = textured_mesh.t_pos_idx.cpu().numpy()  # [F, 3]
+
+    obj_path = output_path + "_textured.obj"
+    with open(obj_path, "w") as f:
+        for i in range(verts.shape[0]):
+            x, y, z = verts[i]
+            r, g, b = colors[i]
+            f.write(f"v {x} {y} {z} {r} {g} {b}\n")
+
+        for i in range(faces.shape[0]):
+            a, b, c = faces[i] + 1  # .obj is 1-indexed
+            f.write(f"f {a} {b} {c}\n")
+
+

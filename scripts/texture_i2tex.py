@@ -103,5 +103,6 @@ if __name__ == "__main__":
         rgb_path=mv_path,
         rgb_process_config=ModProcessConfig(view_upscale=True, inpaint_mode="view"),
         camera_azimuth_deg=[x - 90 for x in [0, 90, 180, 270, 180, 180]],
+        debug_mode=True
     )
     print(f"Output saved to {out.shaded_model_save_path}")

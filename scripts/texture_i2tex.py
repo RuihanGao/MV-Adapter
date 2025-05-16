@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+from PIL import Image
 
 import torch
 from torchvision import transforms
@@ -49,11 +50,13 @@ if __name__ == "__main__":
         birefnet.to(args.device)
         transform_image = transforms.Compose(
             [
+                transforms.Lambda(lambda x: x.convert("RGB") if x.mode == "RGBA" else x),  # Convert RGBA to RGB
                 transforms.Resize((1024, 1024)),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
             ]
         )
+        
         remove_bg_fn = lambda x: remove_bg(x, birefnet, transform_image, args.device)
     else:
         remove_bg_fn = None

@@ -24,5 +24,10 @@ pytorch-lightning
 # new added for texturing
 spandrel
 open3d
-pymeshlab
+pymeshlab==2022.2 # newer version removes "Percentage"
 xatlas
+pygltflib
+gltflib
+
+# cvcuda (NOTE: check the version on your machine)
+cvcuda-cu12

@@ -23,6 +23,7 @@ from mvadapter.utils.mesh_utils import (
     replace_mesh_texture_and_save,
 )
 from mvadapter.utils.mesh_utils.mesh_process import process_raw
+import pdb
 
 
 def clear():
@@ -181,6 +182,9 @@ class TexturePipeline:
             process_raw(mesh_path, mesh_path_new, preprocess=preprocess_mesh)
             mesh_path = mesh_path_new
 
+        if debug_mode:
+            print(f"Load mesh from {mesh_path}")
+
         mesh: TexturedMesh = load_mesh(
             mesh_path,
             rescale=True,
@@ -190,6 +194,9 @@ class TexturePipeline:
         )
 
         # projection
+        if debug_mode:
+            print(f"Camera projection type: {camera_projection_type}")
+
         if camera_projection_type == "PERSP":
             raise NotImplementedError
         elif camera_projection_type == "ORTHO":
@@ -211,6 +218,7 @@ class TexturePipeline:
             "normal": (normal_path, normal_process_config),
         }
         mod_uv_image, mod_uv_tensor = {}, {}
+        # print(f"check mod_kwargs: \n {mod_kwargs.keys()}") # ['rgb', 'base_color', 'orm', 'normal']
         for mod_name, (mod_path, mod_process_config) in mod_kwargs.items():
             if mod_path is None:
                 mod_uv_image[mod_name] = None
@@ -392,8 +400,10 @@ class TexturePipeline:
 
             mod_uv_image[mod_name] = tensor_to_image(uv_proj)
             mod_uv_tensor[mod_name] = uv_proj
+            if debug_mode:
+                print(f"finish mod {mod_name}, uv_tensor shape: {mod_uv_tensor[mod_name].shape}")
+                # finish mod rgb, uv_tensor shape: torch.Size([4096, 4096, 3])
             clear()
-
         shaded_model_save_path = None
         if mod_uv_image["rgb"] is not None:
             shaded_model_save_path = os.path.join(save_dir, f"{save_name}_shaded.glb")

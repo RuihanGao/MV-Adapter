@@ -71,6 +71,7 @@ if __name__ == "__main__":
     os.makedirs(args.save_dir, exist_ok=True)
 
     # 1. run MV-Adapter to generate multi-view images
+    print(f"Step 1: Generating multi-view images from {args.image}")
     images, _, _, _ = run_pipeline(
         pipe,
         mesh_path=args.mesh,
@@ -93,6 +94,7 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
 
     # 2. un-project and complete texture
+    print(f"Step 2: Un-projecting and completing texture from {mv_path}")
     out = texture_pipe(
         mesh_path=args.mesh,
         save_dir=args.save_dir,
@@ -103,6 +105,6 @@ if __name__ == "__main__":
         rgb_path=mv_path,
         rgb_process_config=ModProcessConfig(view_upscale=True, inpaint_mode="view"),
         camera_azimuth_deg=[x - 90 for x in [0, 90, 180, 270, 180, 180]],
-        debug_mode=True
+        debug_mode=False
     )
     print(f"Output saved to {out.shaded_model_save_path}")

@@ -4,6 +4,7 @@ import pymeshlab
 import torch
 import trimesh
 from pymeshlab import Percentage
+import pdb
 
 
 ### Mesh Utils ###
@@ -275,6 +276,7 @@ def process_raw(mesh_path, save_path, preprocess=True, device="cpu"):
     }
 
     if preprocess:
+        print(f"Run process_mesh...")
         v_pos, t_pos_idx, normals = process_mesh(
             vertices=vertices,
             faces=faces,
@@ -282,15 +284,24 @@ def process_raw(mesh_path, save_path, preprocess=True, device="cpu"):
         )
     else:
         v_pos, t_pos_idx, normals = vertices, faces, mesh.vertex_normals
+    
+    # print(f"In process_raw, v_pos shape: {v_pos.shape}, t_pos_idx shape: {t_pos_idx.shape}, normals shape: {normals.shape}")
+    # demo: In process_raw, v_pos shape: (21933, 3), t_pos_idx shape: (7311, 3), normals shape: (21933, 3)
+    # our example (raw): In process_raw, v_pos shape: (2050692, 3), t_pos_idx shape: (4104652, 3), normals shape: (2050692, 3)
+    # our example (processed): In process_raw, v_pos shape: (24369, 3), t_pos_idx shape: (48953, 3), normals shape: (24369, 3)
 
     v_tex_np = (
         uv_parameterize_uvatlas(v_pos, t_pos_idx).reshape(-1, 2).astype(np.float32)
     )
+    # print(f"obtain v_tex_np shape: {v_tex_np.shape}")
+    # demo: obtain v_tex_np shape: (21933, 2)
+    # our example (processed): obtain v_tex_np shape: (146859, 2)
 
     v_pos = torch.from_numpy(v_pos).to(device=device, dtype=torch.float32)
     t_pos_idx = torch.from_numpy(t_pos_idx).to(device=device, dtype=torch.long)
     v_tex = torch.from_numpy(v_tex_np).to(device=device, dtype=torch.float32)
-    normals = torch.from_numpy(normals).to(device=device, dtype=torch.float32)
+    # normals = torch.from_numpy(normals).to(device=device, dtype=torch.float32)
+    normals = torch.from_numpy(np.copy(normals)).to(device=device, dtype=torch.float32)
     assert v_tex.shape[0] == t_pos_idx.shape[0] * 3
     t_tex_idx = torch.arange(
         t_pos_idx.shape[0] * 3,

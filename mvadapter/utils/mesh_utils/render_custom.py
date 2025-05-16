@@ -193,7 +193,6 @@ def load_mesh(
     if hasattr(mesh, "visual") and hasattr(mesh.visual, "uv"):
         v_tex = torch.tensor(mesh.visual.uv, dtype=torch.float32)
         print(f"loaded mesh has visual, v_tex: {v_tex.shape}")
-        # pdb.set_trace()
         if flip_uv:
             v_tex[:, 1] = 1.0 - v_tex[:, 1]
         t_tex_idx = t_pos_idx.clone()

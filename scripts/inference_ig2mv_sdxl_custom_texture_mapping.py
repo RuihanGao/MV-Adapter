@@ -405,9 +405,6 @@ if __name__ == "__main__":
     Image.fromarray(tex_img).save(tex_path)
     print(f"Saved baked texture to {tex_path}")
     np.savez(output_path + "_uv_coords.npz", uv_coords=uv_coords, images_tensor=images_tensor, masks=masks, v_tex=v_tex.cpu().numpy(), t_tex_idx=t_tex_idx.cpu().numpy())
-    pdb.set_trace()
-
-
 
     # use multi-view images and camera params to bake texture to mesh
     print(f"### Bake Multi-View Texture to Mesh ###")

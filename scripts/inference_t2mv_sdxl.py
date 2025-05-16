@@ -5,11 +5,9 @@ from diffusers import AutoencoderKL, DDPMScheduler, LCMScheduler, UNet2DConditio
 
 from mvadapter.pipelines.pipeline_mvadapter_t2mv_sdxl import MVAdapterT2MVSDXLPipeline
 from mvadapter.schedulers.scheduling_shift_snr import ShiftSNRScheduler
-from mvadapter.utils import (
-    get_orthogonal_camera,
-    get_plucker_embeds_from_cameras_ortho,
-    make_image_grid,
-)
+from mvadapter.utils.mesh_utils import get_orthogonal_camera
+from mvadapter.utils.geometry import get_plucker_embeds_from_cameras_ortho
+from mvadapter.utils import make_image_grid
 
 
 def prepare_pipeline(

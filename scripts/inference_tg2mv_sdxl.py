@@ -7,7 +7,7 @@ from mvadapter.models.attention_processor import DecoupledMVRowColSelfAttnProces
 from mvadapter.pipelines.pipeline_mvadapter_t2mv_sdxl import MVAdapterT2MVSDXLPipeline
 from mvadapter.schedulers.scheduling_shift_snr import ShiftSNRScheduler
 from mvadapter.utils import get_orthogonal_camera, make_image_grid, tensor_to_image
-from mvadapter.utils.render import NVDiffRastContextWrapper, load_mesh, render
+from mvadapter.utils.mesh_utils import NVDiffRastContextWrapper, load_mesh, render
 
 
 def prepare_pipeline(

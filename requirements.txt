@@ -2,7 +2,7 @@ controlnet_aux
 diffusers==0.31.0
 transformers==4.46.3
 peft
-numpy==1.26.2
+numpy
 huggingface_hub==0.29.1
 accelerate==1.1.1
 opencv-python

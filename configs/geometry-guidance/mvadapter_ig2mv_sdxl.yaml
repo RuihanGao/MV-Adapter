@@ -8,7 +8,7 @@ data:
   root_dir: data/texture_ortho6view_easylight
   scene_list: data/objaverse_list_6w.json
   background_color: gray
-  image_names: ["0000", "0001", "0002", "0003", "0004", "0005"]
+  image_names: ["0000", "0001", "0002", "0003", "0008", "0009"]
   image_modality: color
   num_views: 6
 

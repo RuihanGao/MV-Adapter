@@ -19,6 +19,17 @@ from PIL import Image, ImageDraw
 from .typing import *
 
 
+def image_to_tensor(
+    images: List[Image.Image], device: str = "cuda"
+) -> torch.FloatTensor:
+    tensors = []
+    for image in images:
+        tensor = torch.from_numpy(np.array(image)).float() / 255.0
+        tensor = tensor.to(device)
+        tensors.append(tensor)
+    return torch.stack(tensors)
+
+
 def tensor_to_image(
     data: Union[Image.Image, torch.Tensor, np.ndarray],
     batched: bool = False,

@@ -12,8 +12,8 @@ import trimesh
 from PIL import Image
 from torch import BoolTensor, FloatTensor
 
-from . import logging
 from .camera import Camera
+<<<<<<< HEAD:mvadapter/utils/render.py
 import xatlas
 import pdb
 
@@ -259,6 +259,10 @@ def load_mesh(
         return textured_mesh, np.array(centroid), max_scale / scale
 
     return textured_mesh
+=======
+from .mesh import TexturedMesh
+from .utils import get_clip_space_position, transform_points_homo
+>>>>>>> upstream/main:mvadapter/utils/mesh_utils/render.py
 
 
 @dataclass
@@ -267,6 +271,7 @@ class RenderOutput:
     mask: Optional[torch.BoolTensor] = None
     depth: Optional[torch.FloatTensor] = None
     normal: Optional[torch.FloatTensor] = None
+    tangent: Optional[torch.FloatTensor] = None
     pos: Optional[torch.FloatTensor] = None
     uv: Optional[torch.FloatTensor] = None
 
@@ -297,7 +302,12 @@ class NVDiffRastContextWrapper:
         A tuple of two tensors. The first output tensor has shape [minibatch_size, height, width, 4] and contains the main rasterizer output in order (u, v, z/w, triangle_id). If the OpenGL context was configured to output image-space derivatives of barycentrics, the second output tensor will also have shape [minibatch_size, height, width, 4] and contain said derivatives in order (du/dX, du/dY, dv/dX, dv/dY). Otherwise it will be an empty tensor with shape [minibatch_size, height, width, 0].
         """
         return dr.rasterize(
-            self.ctx, pos.float(), tri.int(), resolution, ranges, grad_db
+            self.ctx,
+            pos.float().contiguous(),
+            tri.int().contiguous(),
+            resolution,
+            ranges,
+            grad_db,
         )
 
     def interpolate(self, attr, rast, tri, rast_db=None, diff_attrs=None):
@@ -315,7 +325,9 @@ class NVDiffRastContextWrapper:
         Returns:
         A tuple of two tensors. The first output tensor contains interpolated attributes and has shape [minibatch_size, height, width, num_attributes]. If rast_db and diff_attrs were specified, the second output tensor contains the image-space derivatives of the selected attributes and has shape [minibatch_size, height, width, 2 * len(diff_attrs)]. The derivatives of the first selected attribute A will be on channels 0 and 1 as (dA/dX, dA/dY), etc. Otherwise, the second output tensor will be an empty tensor with shape [minibatch_size, height, width, 0].
         """
-        return dr.interpolate(attr.float(), rast, tri.int(), rast_db, diff_attrs)
+        return dr.interpolate(
+            attr.float().contiguous(), rast, tri.int().contiguous(), rast_db, diff_attrs
+        )
 
     def texture(
         self,
@@ -384,21 +396,6 @@ class NVDiffRastContextWrapper:
             topology_hash,
             pos_gradient_boost,
         )
-
-
-def get_clip_space_position(pos: torch.FloatTensor, mvp_mtx: torch.FloatTensor):
-    pos_homo = torch.cat([pos, torch.ones([pos.shape[0], 1]).to(pos)], dim=-1)
-    return torch.matmul(pos_homo, mvp_mtx.permute(0, 2, 1))
-
-
-def transform_points_homo(pos: torch.FloatTensor, mtx: torch.FloatTensor):
-    batch_size = pos.shape[0]
-    pos_shape = pos.shape[1:-1]
-    pos = pos.reshape(batch_size, -1, 3)
-    pos_homo = torch.cat([pos, torch.ones_like(pos[..., 0:1])], dim=-1)
-    pos = (pos_homo.unsqueeze(2) * mtx.unsqueeze(1)).sum(-1)[..., :3]
-    pos = pos.reshape(batch_size, *pos_shape, 3)
-    return pos
 
 
 class DepthNormalizationStrategy(ABC):
@@ -479,10 +476,12 @@ def render(
     render_uv: bool = False,  # <---- new flag
     render_depth: bool = True,
     render_normal: bool = True,
+    render_tangent: bool = False,
     depth_normalization_strategy: DepthNormalizationStrategy = DepthControlNetNormalization(),
     attr_background: Union[float, torch.FloatTensor] = 0.5,
     antialias_attr=False,
-    normal_background: Union[float, torch.FloatTensor] = 0.5,
+    normal_background: Union[float, torch.FloatTensor] = 0.0,
+    tangent_background: Union[float, torch.FloatTensor] = 0.0,
     texture_override=None,
     texture_filter_mode: str = "linear",
 ) -> RenderOutput:
@@ -533,4 +532,35 @@ def render(
         gb_nrm[~mask] = normal_background
         output_dict["normal"] = gb_nrm
 
+    if render_tangent:
+        gb_tang, _ = ctx.interpolate(mesh.v_tang[None], rast, mesh.stitched_t_pos_idx)
+        gb_tang = F.normalize(gb_tang, dim=-1, p=2)
+        gb_tang[~mask] = tangent_background
+        output_dict["tangent"] = gb_tang
+
     return RenderOutput(**output_dict)
+
+
+def tensor_to_image(
+    data: Union[Image.Image, torch.Tensor, np.ndarray],
+    batched: bool = False,
+    format: str = "HWC",
+) -> Union[Image.Image, List[Image.Image]]:
+    if isinstance(data, Image.Image):
+        return data
+    if isinstance(data, torch.Tensor):
+        data = data.detach().cpu().numpy()
+    if data.dtype == np.float32 or data.dtype == np.float16:
+        data = (data * 255).astype(np.uint8)
+    elif data.dtype == np.bool_:
+        data = data.astype(np.uint8) * 255
+    assert data.dtype == np.uint8
+    if format == "CHW":
+        if batched and data.ndim == 4:
+            data = data.transpose((0, 2, 3, 1))
+        elif not batched and data.ndim == 3:
+            data = data.transpose((1, 2, 0))
+
+    if batched:
+        return [Image.fromarray(d) for d in data]
+    return Image.fromarray(data)

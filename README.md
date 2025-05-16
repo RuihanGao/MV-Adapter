@@ -15,6 +15,7 @@ Highlight Features: Generate multi-view images
 
 ## 🔥 Updates
 
+* [2025-05-15] Release full pipeline for text-to-texture and image-to-texture generation. [See [guidelines](#usage-texture-generation)]
 * [2025-04-23] Release dataset ([Objaverse-Ortho10View](https://huggingface.co/datasets/huanngzh/Objaverse-Ortho10View) and [Objaverse-Rand6View](https://huggingface.co/datasets/huanngzh/Objaverse-Rand6View)) and training code. [See [guidelines](#️-training)]
 * [2025-03-31] Release text/image-conditioned 3D texture generation demos on [Text2Texture](https://huggingface.co/spaces/VAST-AI/MV-Adapter-Text2Texture) and [Image2Texture](https://huggingface.co/spaces/VAST-AI/MV-Adapter-Img2Texture). Feel free to try them!
 * [2025-03-17] Release model weights for partial-image conditioned geometry-to-multiview generation, which can be used to generate textured 3D scenes combined with [MIDI](https://github.com/VAST-AI-Research/MIDI-3D). [See [guidelines](#partial-image--geometry-to-multiview)]
@@ -42,6 +43,7 @@ Highlight Features: Generate multi-view images
       - [Image-Geometry to Multiview Generation](#image-geometry-to-multiview-generation)
       - [Partial Image + Geometry to Multiview](#partial-image--geometry-to-multiview)
     - [ComfyUI](#comfyui)
+  - [Usage: Texture Generation](#usage-texture-generation)
   - [Citation](#citation)
 
 ## Model Zoo & Demos
@@ -85,6 +87,8 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 # other dependencies
 pip install -r requirements.txt
 ```
+
+For texture generation, you need to install `CV-CUDA` according to [CVCUDA/CV-CUDA](https://github.com/CVCUDA/CV-CUDA?tab=readme-ov-file#installation).
 
 ## Notes
 
@@ -349,6 +353,43 @@ Please check <a href="https://github.com/huanngzh/ComfyUI-MVAdapter" target="_bl
 **Image to Multiview Generation**
 
 ![comfyui_i2mv](assets/doc/comfyui_i2mv.png)
+
+
+## Usage: Texture Generation
+
+**Prepare Models**
+
+Download pre-trained [RealESRGAN](https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth) for upscaling images and [LaMa](https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt) for view in-painting.
+
+```Bash
+wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth -O ./checkpoints/RealESRGAN_x2plus.pth
+wget https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt -O ./checkpoints/big-lama.pt
+```
+
+**Usage**
+
+> All in one script
+
+Text-conditioned texture generation:
+
+```Bash
+python -m scripts.texture_t2tex \
+--mesh assets/demo/tg2mv/ac9d4e4f44f34775ad46878ba8fbfd86.glb \
+--text "Mater, a rusty and beat-up tow truck from the 2006 Disney/Pixar animated film 'Cars', with a rusty brown exterior, big blue eyes." \
+--save_dir outputs --save_name t2tex_sample
+```
+
+Image-conditioned texture generation:
+
+```Bash
+python -m scripts.texture_i2tex \
+--image assets/demo/ig2mv/1ccd5c1563ea4f5fb8152eac59dabd5c.jpeg \
+--mesh assets/demo/ig2mv/1ccd5c1563ea4f5fb8152eac59dabd5c.glb \
+--save_dir outputs --save_name i2tex_sample \
+--remove_bg
+```
+
+It will save the textured model into `<save_dir>/<save_name>_shaded.glb`.
 
 ## 📊 Dataset
 

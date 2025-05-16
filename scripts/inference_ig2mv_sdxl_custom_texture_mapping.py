@@ -21,8 +21,14 @@ import trimesh
 from mvadapter.models.attention_processor import DecoupledMVRowColSelfAttnProcessor2_0
 from mvadapter.pipelines.pipeline_mvadapter_i2mv_sdxl import MVAdapterI2MVSDXLPipeline
 from mvadapter.schedulers.scheduling_shift_snr import ShiftSNRScheduler
-from mvadapter.utils import get_orthogonal_camera, make_image_grid, tensor_to_image
-from mvadapter.utils.render import NVDiffRastContextWrapper, load_mesh, render
+from mvadapter.utils.mesh_utils import (
+    get_orthogonal_camera,
+    NVDiffRastContextWrapper,
+    load_mesh,
+    render,
+)
+from mvadapter.utils.geometry import get_plucker_embeds_from_cameras_ortho
+from mvadapter.utils import make_image_grid, tensor_to_image
 
 
 def bake_uv_texture_from_views(images_tensor, uv_coords, masks, texres=1024, inpaint=True):

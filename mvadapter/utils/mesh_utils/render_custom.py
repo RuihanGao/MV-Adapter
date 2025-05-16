@@ -13,7 +13,6 @@ from PIL import Image
 from torch import BoolTensor, FloatTensor
 
 from .camera import Camera
-<<<<<<< HEAD:mvadapter/utils/render.py
 import xatlas
 import pdb
 
@@ -259,10 +258,6 @@ def load_mesh(
         return textured_mesh, np.array(centroid), max_scale / scale
 
     return textured_mesh
-=======
-from .mesh import TexturedMesh
-from .utils import get_clip_space_position, transform_points_homo
->>>>>>> upstream/main:mvadapter/utils/mesh_utils/render.py
 
 
 @dataclass
